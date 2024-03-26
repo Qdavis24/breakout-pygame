@@ -30,14 +30,13 @@ p_font = pygame.font.Font(None, 100)
 over_font = pygame.font.Font(None, 150)
 ll_font = pygame.font.Font(None, 50)
 
-
 # texts
 p_text = p_font.render("Pause", False, "black")
 over_text = over_font.render("Game Over", False, "black")
 
 # rects
-p_rect = p_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2))
-over_rect = over_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2-100))
+p_rect = p_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2))
+over_rect = over_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100))
 
 
 # spawn bricks
@@ -53,6 +52,7 @@ def layout_bricks():
         y += 25
     return bricks
 
+
 # groups and surfaces
 
 bricks = layout_bricks()
@@ -65,10 +65,12 @@ bg.fill("#F7EEDD")
 
 speed = 10
 exploding_brick = {}
+dead_bricks = []
 RUNNING, PAUSE, OVER = 0, 1, 2
 game_state = RUNNING
 
 
+# reset vars for restart
 def restart():
     player.lives = 3
     player.level = 1
@@ -77,8 +79,7 @@ def restart():
 
 
 while True:
-    if clock.get_fps() < 50:
-        print(clock.get_fps())
+    # events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
@@ -96,53 +97,73 @@ while True:
                 else:
                     game_state = PAUSE
     if game_state == RUNNING:
+
+        # LOGIC -------------------------------------------------------------------------------------------------------
+
+        # handle no more bricks
         if len(bricks) < 1:
             if player.lives > 0:
                 player.lives = 3
                 player.level += 1
                 win.play()
                 speed += 2
-            del exploding_brick["x"]
-            del exploding_brick["y"]
+            exploding_brick = {}
             ball.respawn(speed)
             bricks = layout_bricks()
+
+        # handle paddle hit
         if pygame.Rect.colliderect(ball.rect, player.rect):
             ball.calc_velocity(player)
             hit.play()
 
-        for i, brick in enumerate(bricks):
+        # keep track of brick collisions with ball and exploding bricks
+        # handle ball physics
+        for brick in bricks:
             if "x" in exploding_brick:
                 y_d = abs(brick.rect.x - exploding_brick["x"])
                 x_d = abs(brick.rect.y - exploding_brick["y"])
                 if y_d <= 200 and x_d < 200:
                     if random.choice([True, False, False]):
                         brick_hit.play()
-                        bricks.remove(brick)
+                        dead_bricks.append(brick)
             if pygame.Rect.colliderect(ball.rect, brick.rect):
                 brick_hit.play()
                 ball.calc_velocity(brick)
-                bricks[i] = bricks.pop()
+                dead_bricks.append(brick)
                 if brick.explosive:
                     exploding_brick["x"] = brick.rect.x
                     exploding_brick["y"] = brick.rect.y
                 else:
                     exploding_brick = {}
 
-        if ball.rect.x < 0 or ball.rect.x > 1190:
+        # remove hit bricks or exploded bricks
+        if len(dead_bricks) > 0:
+            for db in dead_bricks:
+                if db in bricks:
+                    bricks.remove(db)
+            dead_bricks = []
+
+        # handle wall collision ball or fall offscreen
+        if ball.rect.x < 0 or ball.rect.x > SCREEN_WIDTH-10:
             boing.play()
             ball.velocity_x *= -1
         if ball.rect.y < 0:
             boing.play()
             ball.velocity_y *= -1
-        elif ball.rect.y > 1200:
+        elif ball.rect.y > SCREEN_HEIGHT:
             player.lives -= 1
             death.play()
             ball.respawn(speed)
+        # update player and ball positions
         player.update()
         ball.update()
+
+        # handle player death
         if player.lives < 1:
             game_state = OVER
             exploding_brick = {}
+
+        # drawing on screen --------------------------------------------------------------------------------------------
         screen.blit(bg, (0, 0))
         for brick in bricks:
             screen.blit(brick.image, brick.rect)
@@ -154,13 +175,14 @@ while True:
         lives_rect = lives_text.get_rect(bottomright=(1190, 800))
         screen.blit(level_text, level_rect)
         screen.blit(lives_text, lives_rect)
+        # pause and game over menu
     elif game_state == PAUSE:
         screen.blit(bg, (0, 0))
         screen.blit(p_text, p_rect)
     else:
         screen.blit(over_text, over_rect)
         continue_text = ll_font.render("Click the mouse to continue..", False, 'black')
-        continue_rect = continue_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2+50))
+        continue_rect = continue_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50))
         screen.blit(continue_text, continue_rect)
     pygame.display.update()
     clock.tick(60)
