@@ -117,7 +117,7 @@ while True:
             if event.key == pygame.K_ESCAPE:
                 if game_state == PAUSE:
                     game_state = RUNNING
-                else:
+                elif game_state != OVER:
                     game_state = PAUSE
     if game_state == RUNNING:
 
