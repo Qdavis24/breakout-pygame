@@ -3,7 +3,7 @@ import sys
 import random
 
 # my modules
-from classes import Player, Brick, Ball
+from classes import Player, Brick, Ball, ExplosiveBall, Particle, Power
 
 # constants
 SCREEN_WIDTH = 1200
@@ -53,6 +53,26 @@ def layout_bricks():
     return bricks
 
 
+# func that loops through list of sprites and updates them
+def update_sprite_list(sl):
+    if len(sl) > 0:
+        for i in sl:
+            i.update()
+
+
+# func for drawing sprites on screen and also garbage collects sprites offscreen
+def draw_sprite_list(sl, surface):
+    garbage = []
+    if len(sl) > 0:
+        for i in sl:
+            if i.rect.y < 1200:
+                surface.blit(i.image, i.rect)
+            else:
+                garbage.append(i)
+    for j in garbage:
+        sl.remove(j)
+
+
 # groups and surfaces
 
 bricks = layout_bricks()
@@ -60,6 +80,9 @@ player = Player()
 ball = Ball(10)
 bg = pygame.Surface((1200, 800))
 bg.fill("#F7EEDD")
+explosive_balls = []
+particles = []
+powers = []
 
 # setup
 
@@ -100,7 +123,7 @@ while True:
 
         # LOGIC -------------------------------------------------------------------------------------------------------
 
-        # handle no more bricks
+        # handle no more bricks aka next level
         if len(bricks) < 1:
             if player.lives > 0:
                 player.lives = 3
@@ -108,6 +131,7 @@ while True:
                 win.play()
                 speed += 2
             exploding_brick = {}
+            explosive_balls = []
             ball.respawn(speed)
             bricks = layout_bricks()
 
@@ -115,46 +139,82 @@ while True:
         if pygame.Rect.colliderect(ball.rect, player.rect):
             ball.calc_velocity(player)
             hit.play()
+        # handle power up hit
+        if len(powers) > 0:
+            for power in powers:
+                if pygame.Rect.colliderect(power.rect, player.rect):
+                    for i in range(random.randint(5, 8)):
+                        explosive_balls.append(ExplosiveBall(player.rect.midtop))
 
         # keep track of brick collisions with ball and exploding bricks
         # handle ball physics
         for brick in bricks:
+            # check for explosive ball collisions w bricks only if explosive balls are present
+            if len(explosive_balls) > 0:
+                for eb in explosive_balls:
+                    if pygame.Rect.colliderect(eb.rect, brick.rect):
+                        brick_hit.play()
+                        # classifying these as non exploded, might change later
+                        dead_bricks.append([brick, 0])
+            # if we have an explosion position stored in dict remove all bricks that are within 200 pixels
             if "x" in exploding_brick:
                 y_d = abs(brick.rect.x - exploding_brick["x"])
                 x_d = abs(brick.rect.y - exploding_brick["y"])
                 if y_d <= 200 and x_d < 200:
                     if random.choice([True, False, False]):
                         brick_hit.play()
-                        dead_bricks.append(brick)
+                        dead_bricks.append([brick, 1])
+            # check normal ball w brick collision
             if pygame.Rect.colliderect(ball.rect, brick.rect):
                 brick_hit.play()
                 ball.calc_velocity(brick)
-                dead_bricks.append(brick)
+                dead_bricks.append([brick, 0])
+                # if brick is light blue or explosive store explosion position in dict
                 if brick.explosive:
                     exploding_brick["x"] = brick.rect.x
                     exploding_brick["y"] = brick.rect.y
+                # if ball hits another non-explosive brick reset dict
                 else:
                     exploding_brick = {}
 
         # remove hit bricks or exploded bricks
         if len(dead_bricks) > 0:
-            for db in dead_bricks:
+            for sublist in dead_bricks:
+                # unpacks the sublists in dead_bricks into the brick object and exploded status
+                db = sublist[0]
+                exploded = sublist[1]
+                # element not present in list occasionally not sure why
+                # weird bug fix below
                 if db in bricks:
                     bricks.remove(db)
+                    if exploded:
+                        # generate fewer particles for exploded bricks
+                        if random.randint(0, 10) == 1:
+                            particles.append(Particle(db.rect.midbottom, ball.velocity_x))
+                    else:
+                        # 2% chance of power spawn from non exploded brick
+                        if random.randint(0, 50) == 1:
+                            powers.append(Power(db.rect.midbottom))
+                        # more particles for non exploded brick
+                        for i in range(random.randint(3, 5)):
+                            particles.append(Particle(db.rect.midbottom, ball.velocity_x))
             dead_bricks = []
 
-        # handle wall collision ball or fall offscreen
-        if ball.rect.x < 0 or ball.rect.x > SCREEN_WIDTH-10:
+        # handle ball wall collision or fall offscreen
+        if ball.rect.x < 0 or ball.rect.x > SCREEN_WIDTH - 10:
             boing.play()
             ball.velocity_x *= -1
-        if ball.rect.y < 0:
+        if ball.rect.y < 0 and ball.velocity_y < 0:
             boing.play()
             ball.velocity_y *= -1
         elif ball.rect.y > SCREEN_HEIGHT:
             player.lives -= 1
             death.play()
             ball.respawn(speed)
-        # update player and ball positions
+        # update player, ball, power, and active powers positions
+        update_sprite_list(particles)
+        update_sprite_list(explosive_balls)
+        update_sprite_list(powers)
         player.update()
         ball.update()
 
@@ -165,8 +225,10 @@ while True:
 
         # drawing on screen --------------------------------------------------------------------------------------------
         screen.blit(bg, (0, 0))
-        for brick in bricks:
-            screen.blit(brick.image, brick.rect)
+        draw_sprite_list(bricks, screen)
+        draw_sprite_list(particles, screen)
+        draw_sprite_list(powers, screen)
+        draw_sprite_list(explosive_balls, screen)
         screen.blit(ball.image, ball.rect)
         screen.blit(player.image, player.rect)
         level_text = ll_font.render(f"Level {player.level}", True, 'black')
@@ -177,7 +239,7 @@ while True:
         screen.blit(lives_text, lives_rect)
         # pause and game over menu
     elif game_state == PAUSE:
-        screen.blit(bg, (0, 0))
+
         screen.blit(p_text, p_rect)
     else:
         screen.blit(over_text, over_rect)
